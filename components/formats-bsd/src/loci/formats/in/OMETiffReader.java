@@ -1145,6 +1145,10 @@ public class OMETiffReader extends SubResolutionFormatReader {
         if (testFile != null) {
           testFile.close();
         }
+        // close the file handle, but keep all other metadata
+        if (info[s][0].reader != null) {
+          info[s][0].reader.close(true);
+        }
       }
     }
 
