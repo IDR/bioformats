@@ -28,6 +28,8 @@ package loci.formats.in;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 import loci.common.DataTools;
 import loci.common.Location;
@@ -381,6 +383,17 @@ public class OperettaReader extends FormatReader {
     planes = new Plane[seriesCount][zs.length * cs.length * ts.length];
 
     int nextSeries = 0;
+
+    Map<String, Plane> hashToPlane =new HashMap<>();
+
+    for (Plane p : planeList) {
+      String key = p.row+":"+p.col+":"+p.field+":"+p.c+":"+p.z+":"+p.t;
+      if (hashToPlane.containsKey(key)) {
+        LOGGER.error("Multiple planes found for key {}",key);
+      }
+      hashToPlane.put(key, p);
+    }
+
     for (int row=0; row<rows.length; row++) {
       for (int col=0; col<cols.length; col++) {
         for (int field=0; field<fields.length; field++) {
@@ -388,14 +401,9 @@ public class OperettaReader extends FormatReader {
           for (int t=0; t<ts.length; t++) {
             for (int z=0; z<zs.length; z++) {
               for (int c=0; c<cs.length; c++) {
-                for (Plane p : planeList) {
-                  if (p.row == rows[row] && p.col == cols[col] &&
-                    p.field == fields[field] && p.t == ts[t] && p.z == zs[z] &&
-                    p.c == cs[c])
-                  {
-                    planes[nextSeries][nextPlane] = p;
-                    break;
-                  }
+                String key = rows[row]+":"+cols[col]+":"+fields[field]+":"+cs[c]+":"+zs[z]+":"+ts[t];
+                if (hashToPlane.containsKey(key)) {
+                  planes[nextSeries][nextPlane] = hashToPlane.get(key);
                 }
                 nextPlane++;
               }
