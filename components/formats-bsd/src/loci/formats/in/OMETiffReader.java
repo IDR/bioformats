@@ -266,6 +266,27 @@ public class OMETiffReader extends SubResolutionFormatReader {
       FormatTools.NON_SPECIAL_DOMAINS;
   }
 
+  @Override
+  public void setSeries(int series) {
+    super.setSeries(series);
+
+    // don't keep inactive series' files open
+    for (int i=0; i<info.length; i++) {
+      if (i != series && info[i] != null) {
+        for (OMETiffPlane p : info[i]) {
+          if (p != null && p.reader != null) {
+            try {
+              p.reader.close();
+            }
+            catch (IOException e) {
+              LOGGER.warn("Could not close " + p.id, e);
+            }
+          }
+        }
+      }
+    }
+  }
+
   /* @see loci.formats.SubResolutionFormatReader#get8BitLookupTable() */
   @Override
   public byte[][] get8BitLookupTable() throws FormatException, IOException {
@@ -275,7 +296,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
     {
       return null;
     }
-    info[series][lastPlane].reader.setId(info[series][lastPlane].id);
+    initializeReader(info[series][lastPlane].reader, info[series][lastPlane].id);
     return info[series][lastPlane].reader.get8BitLookupTable();
   }
 
@@ -288,7 +309,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
     {
       return null;
     }
-    info[series][lastPlane].reader.setId(info[series][lastPlane].id);
+    initializeReader(info[series][lastPlane].reader, info[series][lastPlane].id);
     return info[series][lastPlane].reader.get16BitLookupTable();
   }
 
@@ -329,7 +350,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
 
     MinimalTiffReader r = (MinimalTiffReader) info[series][no].reader;
     if (r.getCurrentFile() == null) {
-      r.setId(info[series][no].id);
+      initializeReader(r, info[series][no].id);
     }
     r.lastPlane = i;
     IFDList ifdList = r.getIFDs();
@@ -538,7 +559,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
 
     if (!isGroupFiles() && !isSingleFile(currentId)) {
       IFormatReader reader = new MinimalTiffReader();
-      reader.setId(currentId);
+      initializeReader(reader, currentId);
       core.set(0, 0, new OMETiffCoreMetadata(reader.getCoreMetadataList().get(0)));
       int ifdCount = reader.getImageCount();
       reader.close();
@@ -984,7 +1005,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
       if (validPlanes < num && files.size() <= 1) {
         LOGGER.warn("Using TiffReader to determine the number of planes.");
         TiffReader r = new TiffReader();
-        r.setId(currentId);
+        initializeReader(r, currentId);
         try {
           planes = new OMETiffPlane[r.getImageCount()];
           for (int plane=0; plane<planes.length; plane++) {
@@ -1048,7 +1069,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
           }
         }
 
-        info[s][0].reader.setId(info[s][0].id);
+        initializeReader(info[s][0].reader, info[s][0].id);
         m.tileWidth = info[s][0].reader.getOptimalTileWidth();
         m.tileHeight = info[s][0].reader.getOptimalTileHeight();
 
@@ -1145,6 +1166,10 @@ public class OMETiffReader extends SubResolutionFormatReader {
         if (testFile != null) {
           testFile.close();
         }
+        // close the file handle, but keep all other metadata
+        if (info[s][0].reader != null) {
+          info[s][0].reader.close(true);
+        }
       }
     }
 
@@ -1189,6 +1214,17 @@ public class OMETiffReader extends SubResolutionFormatReader {
       Modulo t = service.getModuloAlongT(meta, i);
       if (t != null) {
         m.moduloT = t;
+      }
+    }
+
+    // remove any values we no longer need from the
+    // helper readers' IFDs
+    for (OMETiffPlane[] s : info) {
+      for (OMETiffPlane p : s) {
+        if (p != null && p.reader != null) {
+          removeIFDComments(p.reader);
+          p.reader.close();
+        }
       }
     }
 
@@ -1341,6 +1377,7 @@ public class OMETiffReader extends SubResolutionFormatReader {
         }
         core.add(s, c);
       }
+      r.close();
     }
     core.reorder();
 
@@ -1375,6 +1412,23 @@ public class OMETiffReader extends SubResolutionFormatReader {
       firstIFD = tp.getFirstIFD();
     }
     return firstIFD;
+  }
+
+  private void initializeReader(IFormatReader r, String file)
+    throws FormatException, IOException
+  {
+    r.setId(file);
+    removeIFDComments(r);
+  }
+
+  private void removeIFDComments(IFormatReader r) {
+    if (r != null && r instanceof MinimalTiffReader) {
+      if (((MinimalTiffReader) r).ifds != null) {
+        for (IFD ifd : ((MinimalTiffReader) r).ifds) {
+          ifd.remove(IFD.IMAGE_DESCRIPTION);
+        }
+      }
+    }
   }
 
   // -- Helper classes --
